@@ -33,16 +33,6 @@ mov_csv_1 <- merge(mov_hogares_csv, mov_personas_csv, by = "id_hogar")
 mov_csv <- merge(mov_csv_1, mov_duracion_csv, by="id_hogar")
 mov_csv <- subset(mov_csv, !duplicated(mov_csv$id_hogar))
 
-# Agrupamos tanto dificultad medios transporte como dificultad fisica, dado que
-# no nos interesa si el tipo de dificultad sino solamente si el usuario ha tenido al menos una dificultad
-
-mov_csv <- mutate(mov_csv, dificultad_fisica = 0 + p8_id_dificultad_fisica_1 + p8_id_dificultad_fisica_2 + p8_id_dificultad_fisica_3 + p8_id_dificultad_fisica_4 + p8_id_dificultad_fisica_5 + p8_id_dificultad_fisica_6 + p8_id_dificultad_fisica_7)
-mov_csv <- mutate(mov_csv, dificultad_medio = 0 + p9_id_dificultad_medios_transporte_1 + p9_id_dificultad_medios_transporte_2 + p9_id_dificultad_medios_transporte_3 + p9_id_dificultad_medios_transporte_4 + p9_id_dificultad_medios_transporte_5 + p9_id_dificultad_medios_transporte_6 + p9_id_dificultad_medios_transporte_7 + p9_id_dificultad_medios_transporte_8 + p9_id_dificultad_medios_transporte_9 + p9_id_dificultad_medios_transporte_10 + p9_id_dificultad_medios_transporte_11 + p9_id_dificultad_medios_transporte_12 + p9_id_dificultad_medios_transporte_13) 
-
-#Los usuarios que no tienen niguna dificultad están señalados como NA, debemos rellenar este hueco
-
-mov_csv$dificultad_fisica <- ifelse(is.na(mov_csv$dificultad_fisica), 0, mov_csv$dificultad_fisica)
-mov_csv$dificultad_medio <- ifelse(is.na(mov_csv$dificultad_medio), 0, mov_csv$dificultad_medio)
 #ahora vamos a extraer las columnas de nuestro interes
 
 mov_csv <- mov_csv[, c("modo_principal",
@@ -56,7 +46,7 @@ mov_shapefile@data <-mov_shapefile@data[, c("MUNCodigo",
                                             "UTAM",
                                             "UTAMNombre")]
 
-#ahora debemos cambiar el sujeto de análisis de hogares a UTAM haciendo diferenetes agregaciones
+#ahora debemos cambiar el sujeto de análisis de hogares a UTAM haciendo diferentes agregaciones
 #hacemos un promedio simple para hallar la duración promedio de viaje en cada UPZ
 
 #Hacemos el joint con el .shp a partir de la variable UTAM (Unidad Territorial de Análisis de Transporte)
@@ -80,5 +70,23 @@ empresas_rama@data$codigo <- substr(empresas_rama@data$UPlCodigo, start = 4, sto
 
 #Ahora vamos por medio de indices a generalizar datos desde hogares hasta UPZ
 
-mov_shapefile@data$promedio_viaje <- aggregate(duracion ~ UTAM, data = dataset, FUN = mean)
-  
+promedio_duración_mov <- aggregate(duracion ~ UTAM, data = mov_shapefile@data, FUN = mean)
+
+#ahora indice de ingresos
+
+ingresos_mov <- aggregate(id_rango_ingresos ~ UTAM, data = mov_shapefile@data, FUN = mean)
+ingresos_mov$id_rango_ingresos = ingresos_mov$id_rango_ingresos*(1/10)
+
+#Ahora el indice de transporte informal
+
+num_observaciones_por_UPZ <- as.data.frame(table(mov_shapefile@data$UTAM))
+frecuencia_a_pie_por_UPZ <- as.data.frame(table(subset(mov_shapefile@data, modo_principal == "A pie")$UTAM))
+frecuencia_a_bici_por_UPZ <- as.data.frame(table(subset(mov_shapefile@data, modo_principal == "Bicicleta")$UTAM))
+
+base_1 <- merge(num_observaciones_por_UPZ, frecuencia_a_bici_por_UPZ, by = "Var1")
+I_trans_informal <- merge(base_1, frecuencia_a_pie_por_UPZ, by = "Var1")
+colnames(I_trans_informal) <- c("UTAM", "n", "bici", "pie")
+I_trans_informal$tasa = (I_trans_informal$bici + I_trans_informal$pie)/ I_trans_informal$n
+
+
+
