@@ -48,23 +48,37 @@ mov_csv$dificultad_medio <- ifelse(is.na(mov_csv$dificultad_medio), 0, mov_csv$d
 mov_csv <- mov_csv[, c("modo_principal",
                        "Utam",
                        "id_hogar",
-                       "Latitud",
-                       "Longitud",
                        "duracion",
-                       "dificultad_fisica",
-                       "dificultad_medio",
                        "id_rango_ingresos")]
+
+mov_shapefile@data <-mov_shapefile@data[, c("MUNCodigo",
+                                            "MUNNombre",
+                                            "UTAM",
+                                            "UTAMNombre")]
+
+#ahora debemos cambiar el sujeto de análisis de hogares a UTAM haciendo diferenetes agregaciones
+#hacemos un promedio simple para hallar la duración promedio de viaje en cada UPZ
 
 #Hacemos el joint con el .shp a partir de la variable UTAM (Unidad Territorial de Análisis de Transporte)
 
 mov_csv <- rename(mov_csv, UTAM = Utam)
 mov_shapefile@data <- merge(mov_shapefile@data, mov_csv, by = "UTAM")
 
-#Ahora nece
 
-mov_csv %>% 
-  group_by(modo_principal) %>%
-  summarise(total = n())
+#Eliminamos datos no pertenecientes a Bogotá, estandarizando UTAM para posterior merge con UPZ
 
-mov_csv %>% 
-  group_by(UTAM) 
+mov_shapefile@data <- subset(mov_shapefile@data, MUNNombre == "BOGOTA")
+
+#Creamos una nueva columna en donde mantenga el número de la UTAM y eliminamos UPR
+
+mov_shapefile@data$codigo <- substr(mov_shapefile@data$UTAM, start = 5, stop = nchar(mov_shapefile@data$UTAM))
+mov_shapefile@data <- subset(mov_shapefile@data, codigo != "")
+
+#Hacemos lo mismo para empresas_rama con el fin de tener la llave del joint en un mismo termino
+
+empresas_rama@data$codigo <- substr(empresas_rama@data$UPlCodigo, start = 4, stop = nchar(empresas_rama@data$UPlCodigo))
+
+#Ahora vamos por medio de indices a generalizar datos desde hogares hasta UPZ
+
+mov_shapefile@data$promedio_viaje <- aggregate(duracion ~ UTAM, data = dataset, FUN = mean)
+  
