@@ -14,6 +14,9 @@ library(stringr)
 library(spatmap)
 library(maptools)
 library(dplyr)
+library(writexl)
+library(readxl)
+
 
 
 #Ahora vamos a importar nuestros Datasets
@@ -125,3 +128,14 @@ mov_shapefile@data <- mov_shapefile@data[, c("UTAM",
 
 mov_shapefile@data <- merge(mov_shapefile@data, datos_mov_UPZ, by = "UTAM")
 print(dim(mov_shapefile@data))
+
+#IMPORTAMOS DATOS INCLUYENDO MULTIPROPOSITO
+
+datos <- read_excel("C:/Users/PC/Desktop/datos movilidad.xlsx")
+t_lab_fuerte@data <- merge(t_lab_fuerte@data, datos, by = "UPZZONA")
+
+#Exportamos shp
+t_lab_fuerte_p <- st_as_sf(t_lab_fuerte)
+drv <- st_drivers("ESRI Shapefile")
+driver <- drv$driver[1]
+st_write(t_lab_fuerte_p, "C:/Users/PC/Desktop/", driver = "ESRI Shapefile")
