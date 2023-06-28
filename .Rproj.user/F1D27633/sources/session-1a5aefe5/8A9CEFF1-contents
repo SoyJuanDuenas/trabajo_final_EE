@@ -1,0 +1,101 @@
+##______________________________________________________________________________
+##______________________________________________________________________________
+#       UNIVERSIDAD NACIONAL DE COLOMBIA - FACULTAD DE CIENCIAS ECONÓMICAS
+#                         ECONOMETRIA II - 2023-I
+#                      Taller 7: Econoemtría espacial 
+#               Germán Camilo Rodríguez y Juan Pablo Bermudez
+##______________________________________________________________________________
+##______________________________________________________________________________
+
+
+
+# Preliminares ------------------------------------------------------------
+
+# Paquetes 
+library(spdep)
+library(rgeos)
+library(rgdal)
+library(spatialreg)
+library(tidyverse)
+library(car)
+library(lmtest)
+library(tseries)
+library(tmap)
+
+# limpiar el entorno de trabajo 
+rm(list = ls())
+
+# Importación base de datos
+
+columbus <-readOGR(dsn="C:/Users/germa/Desktop/UNAL/Unal_cursos/provisional_econometria_espacial/columbus/columbus.shp")
+names(columbus)
+plot(columbus)
+
+# Punto 1: Mapa por cuantiles  ------------------------------------------------------------
+
+# Mapa de cuartiles
+tm_shape(columbus) +
+  tm_fill("CRIME",n=4, style="quantile")  +
+  tm_borders() +
+  tm_layout(main.title = "Mapa de Cuartiles de crimen en Columbus", title.size = 1.5,main.title.position="center")
+
+# Punto 2:  -----------------------------------------------------------
+
+# Creacion de matriz de pesos espaciales
+
+coords       <- coordinates(columbus)
+columbus_nbr <- poly2nb(columbus, queen=T) 
+matriz_reina <- nb2listw(columbus_nbr, style="W")
+
+# Indice de Moran para la variable Crime
+moran.test(columbus$CRIME, listw=matriz_reina, randomisation = FALSE, alternative = "two.sided")
+
+# Punto 3: modelo de regresión --------------------------------------------
+
+# Modelo de regresión lineal 
+reg_lineal = lm(CRIME ~ INC + HOVAL, data = columbus); summary(reg_lineal)
+
+# Residuales del modelo
+res = residuals(reg_lineal)
+
+# AIC - reg_lineal
+AIC(reg_lineal)
+
+# jarque bera test
+jarque.bera.test(res)
+
+qqPlot(res)
+
+# Breusch pagan test
+bptest(reg_lineal)
+
+# Punto 4: Modelo espacial apropiado para aplicar la ecuación descrita --------------------------------------------
+
+# Test de independencia espacial
+
+LMq1 <-lm.LMtests(reg_lineal, matriz_reina, test="all")
+LMq1
+t(sapply(LMq1, function(x) unlist (x[1:3])))
+
+
+# Punto 5: Estimación del modelo espacial SAR -----------------------------
+
+# Modelo SAR
+
+# Estimacion del modelo 
+sar_columbus <- lagsarlm(CRIME ~ INC + HOVAL, data = columbus@data, matriz_reina)
+summary(sar_columbus, Nagelkerke=T)
+
+# R2 - SAR
+sar.R2 = 1- var(sar_columbus$residuals)/var(sar_columbus$y)
+sar.R2
+
+# AIC - SAR
+AIC(sar_columbus)
+
+# Test de moran 
+moran.test(sar_columbus$residual, listw=matriz_reina, randomisation = FALSE, alternative = "two.sided")
+moran.plot(sar_columbus$residual, listw=matriz_reina, labels=FALSE, quiet=TRUE,
+           ylab="Residuales SAR espacialmente rezagados", xlab="Residuales SAR")
+
+

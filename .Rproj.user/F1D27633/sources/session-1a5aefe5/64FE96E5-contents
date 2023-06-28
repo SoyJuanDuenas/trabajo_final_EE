@@ -1,0 +1,139 @@
+library(spdep)
+library(rgeos)
+library(rgdal)
+library(spatialreg)
+library(sf)
+
+setwd("C:/Users/germa/Desktop/UNAL/Unal_cursos/trabajo_final_econometria_espacial/Scripts_clase/UPZ_Full")
+
+mapa.upz <-readOGR(dsn="UPZ_Full.shp")
+mapa.upz = st_read("UPZ_Full.shp")
+
+names(mapa.upz)
+plot(mapa.upz)
+
+# Especificaci?n de la f?rmula del modelo
+
+fm <- log(Vr_Suelo) ~ Tas_Hom + Tas_hper + Tas_Les + Pisos_Prom + ICD
+
+# Modelo OLS
+
+upz.ols<-lm(fm,data=mapa.upz)
+summary(upz.ols)
+AIC(upz.ols)
+
+library(lmtest)
+library(car)
+library(nortest)
+library(normtest)
+
+# No multicolinealidad
+
+vif(upz.ols)
+
+# No linealidades no identificadas
+
+resettest(upz.ols)
+
+# Normalidad de los residuales
+
+shapiro.test(upz.ols$residual)
+ad.test(upz.ols$residual)
+qqPlot(upz.ols$residual, pch = 16, col = c("#178A56AA"), col.lines = 6, cex = 1.5, main = "NORMAL Q-Q PLOT", id = F)
+jb.norm.test(upz.ols$residual, nrepl=999)
+
+# Homocedasticidad
+bptest(upz.ols)
+
+# Mapas residuales
+
+library(RColorBrewer)
+library(classInt)
+
+mapa.upz$lm_res <- residuals(upz.ols)
+
+display.brewer.all()
+
+# Mapa residuales: Opci?n 1
+X11()
+spplot(mapa.upz["lm_res"], col.regions = rev(terrain.colors(20)))
+
+# Mapa residuales: Opci?n 2
+pal2 <- colorRampPalette(c("red3", "wheat1", "blue3"))
+X11()
+spplot(mapa.upz,"lm_res", col.regions = pal2(20))
+
+# Mapa residuales: Opci?n 3
+my.palette <- brewer.pal(n = 9, name = "YlOrRd")
+x11()
+spplot(mapa.upz, "lm_res", col.regions = my.palette, cuts = 8)
+
+# Mapa residuales: Opci?n 4
+breaks.ci <- classIntervals(mapa.upz$lm_res, n = 9, style = "quantile", intervalClosure = "right")$brks
+breaks.ci[1] <- breaks.ci[1] - .Machine$double.eps*5000000000000
+breaks.ci[length(breaks.ci)] <- breaks.ci[length(breaks.ci)] + .Machine$double.eps*5000000000000
+spplot(mapa.upz, "lm_res", col.regions = my.palette,  at = breaks.ci)
+
+# Prueba de autocorrelaci?n espacial sobre los residuales
+
+list.queen<-poly2nb(mapa.upz,row.names = mapa.upz$Nom_UPZ, queen=TRUE)
+W<-nb2listw(list.queen, style="W", zero.policy=TRUE)
+
+moran.test(upz.ols$residual, listw=W, randomisation = FALSE, alternative = "two.sided")
+moran.plot(upz.ols$residual, listw=W, labels=FALSE, quiet=TRUE,
+           ylab="Residuales OLS espacialmente rezagados", xlab="Residuales OLS")
+
+# Test de independencia espacial
+
+LMq1 <-lm.LMtests(upz.ols, W, test="all")
+LMq1
+t(sapply(LMq1, function(x) unlist (x[1:3])))
+  
+# Modelo SAR
+
+sar.upz<-lagsarlm(fm,data=mapa.upz, W)
+summary(sar.upz,Nagelkerke=T)
+sar.R2 = 1- var(sar.upz$residuals)/var(sar.upz$y)
+sar.R2
+AIC(sar.upz)
+moran.test(sar.upz$residual, listw=W, randomisation = FALSE, alternative = "two.sided")
+moran.plot(sar.upz$residual, listw=W, labels=FALSE, quiet=TRUE,
+           ylab="Residuales SAR espacialmente rezagados", xlab="Residuales SAR")
+
+# Modelo SEM
+
+upz.sem<-errorsarlm(formula= fm, data=mapa.upz, listw=W, tol.solve=1.0e-30)
+summary(upz.sem, Naguelkerke=T)
+AIC(upz.sem)
+sem.R2 = 1- var(upz.sem$residuals)/var(upz.sem$y)
+sem.R2
+moran.test(upz.sem$residual, listw=W, randomisation = TRUE, alternative = "two.sided")
+moran.plot(upz.sem$residual, listw=W, labels=FALSE, quiet=TRUE,
+           ylab="Residuales SEM espacialmente rezagados", xlab="Residuales SEM")
+
+# Modelo SARAR
+
+upz.sarar<-sacsarlm(formula= fm, data=mapa.upz, listw=W,tol.solve=1.0e-30)
+summary(upz.sarar, Naguelkerke=T)
+AIC(upz.sarar)
+sarar.R2 = 1- var(upz.sarar$residuals)/var(upz.sarar$y)
+sarar.R2
+moran.test(upz.sarar$residual, listw=W, randomisation = TRUE, alternative = "two.sided")
+moran.plot(upz.sarar$residual, listw=W, labels=FALSE, quiet=TRUE,
+           ylab="Residuales SARAR espacialmente rezagados", xlab="Residuales SARAR")
+
+# Modelo SDM 
+
+upz.sdm<-lagsarlm(fm,data=mapa.upz, W, type="mixed",tol.solve=1.0e-30)
+summary(upz.sdm)
+sdm.R2 = 1- var(upz.sdm$residuals)/var(upz.sdm$y)
+sdm.R2
+moran.test(upz.sdm$residual, listw=W, randomisation = TRUE, alternative = "two.sided")
+moran.plot(upz.sdm$residual, listw=W, labels=FALSE, quiet=TRUE,
+           ylab="Residuales SDM espacialmente rezagados", xlab="Residuales SDM")
+
+
+
+
+
+

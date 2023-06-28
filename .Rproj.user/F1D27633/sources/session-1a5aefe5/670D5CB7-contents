@@ -1,0 +1,144 @@
+library(spdep)
+library(rgeos)
+library(rgdal)
+library(spatialreg)
+library(maptools)
+library(RColorBrewer)
+library(classInt)
+set.seed(1234)
+
+columbus <- readShapePoly(system.file("etc/shapes/columbus.shp",
+                                      package = "spdep")[1])
+names(columbus)
+plot(columbus)
+
+library(spgwr)
+library(sf)
+library(GWmodel)
+library(tmap)
+library(car)
+
+# Resultados OLS
+
+columbus.ols<-lm(CRIME ~ INC + HOVAL,data=columbus@data)
+summary(columbus.ols)
+AIC(columbus.ols)
+vif(columbus.ols)
+
+# 
+
+bw_adapt<-numeric(2)
+bw_fixed<-numeric(2)
+i=1
+
+# Se genera un loop para encontrar el ancho de banda óptimo segun cada tipo de kernel
+
+for(kernel in c('gaussian', 'bisquare')){
+  bw_adapt[i]<-bw.gwr(CRIME ~ INC + HOVAL,data=columbus, kernel=kernel, adaptive=T)
+  bw_fixed[i]<-bw.gwr(CRIME ~ INC + HOVAL,data=columbus, kernel=kernel, adaptive=F)
+  i = i + 1}
+
+results<-data.frame (Kernel=rep(c('gaussian','bisquare'),2),
+                     Type=c(rep('adaptive', 2), rep('constant', 2)),
+                     RSS=c(7309, 7116, 6196, 6121))
+
+# gwr.bisquare - gwr.Gauss
+
+# Estimación del ancho de banda. Se prueban distribuiones bicuadrada y gaussiana, fija y adaptativa.
+
+GWRbandwidth1 <- gwr.sel(CRIME ~ INC + HOVAL, data = columbus, gweight=gwr.bisquare, adapt = T)
+GWRbandwidth2 <- gwr.sel(CRIME ~ INC + HOVAL, data = columbus, gweight=gwr.Gauss, adapt = T)
+
+GWRbandwidth3 <- gwr.sel(CRIME ~ INC + HOVAL, data = columbus, gweight=gwr.bisquare, adapt = F)
+GWRbandwidth4 <- gwr.sel(CRIME ~ INC + HOVAL, data = columbus, gweight=gwr.Gauss, adapt = F)
+
+# De acuerdo al resultado, el menor CV se logra con la función gaussiana. Tomando el valor del ancho de banda
+# gaussiano adaptativo se ubica en una relación de vecinos de 6, equivalentes al 13% de las unidades de análisis.
+
+
+# Estimación del modelo GWR - dos formas (la segunda incluye información de los SE de los estimadores).
+
+gwr.model = gwr(CRIME ~ INC + HOVAL,data = columbus, adapt=GWRbandwidth2)
+gwr.model 
+
+gwr.model2 = gwr(CRIME ~ INC + HOVAL,
+                data = columbus,
+                adapt=GWRbandwidth2,
+                hatmatrix=TRUE,
+                se.fit=TRUE)  
+gwr.model2 
+
+# El coeficiente del Ingreso marca una variación de acuerdo con la ubicación entre -2.8 y 
+# 1.35 crímenes por cada mil hogares.
+
+# Pruebas de la GWR (Leung, Mei, and Zhang, 2000)
+
+# Test de bondad del ajuste de los modelos
+# Ho: Los modelos OLS y GWR no son muy diferentes, H1: Modelo GWR es mejor.
+
+LMZ.F2GWR.test(gwr.model2)
+
+# Test de significancia de la variación de los parámetros locales estimados
+# Ho: Variación insignificativa y por tanto con parámetros constantes, Ha: Valores locales significativos
+
+LMZ.F3GWR.test(gwr.model2) # Las variables X rechazan la hipótesis nula; no así el intercepto.
+
+# Revisamos los elementos contenidos en cada salida del modelo y conocer la forma de extracción.
+
+names(gwr.model$SDF)
+names(gwr.model2$SDF)
+
+# Mapas de los betas de INC
+
+# Mapa de SD
+
+b1<-gwr.model$SDF$INC
+brks<-c(min(b1), mean(b1)-sd(b1), mean(b1), mean(b1)+sd(b1), max(b1))
+cols<-c("steelblue4", "lightskyblue", "thistle1", "plum3")
+x11()
+plot(columbus, col=cols[findInterval(b1, brks)])
+title(main="Coeficientes locales estimados (INC) sobre el Crimen")
+legend("topleft", legend=leglabs(round(brks, 2)), fill=cols, bty="n")
+
+
+display.brewer.all()
+
+# Mapa tipo cortes naturales
+
+pal5 <- brewer.pal(6, "PiYG")
+cats5 <- classIntervals(b1, n = 5, style = "jenks")
+colors5 <- findColours(cats5, pal5)
+x11()
+plot(columbus, col = colors5)
+title(main="Coeficientes locales estimados (INC) sobre el Crimen")
+legend("topleft", legend = round(cats5$brks, 2), fill = pal5, bty = "n")
+
+# Mapa SD de los R2 locales
+
+b2<-gwr.model$SDF$localR2
+brks2<-c(min(b2), mean(b2)-sd(b2), mean(b2), mean(b2)+sd(b2), max(b2))
+x11()
+plot(columbus, col=cols[findInterval(b2, brks2)])
+title(main="R2 locales estimados del modelo")
+legend("topleft", legend=leglabs(round(brks2, 2)), fill=cols, bty="n")
+
+
+# Significancia de los coeficientes (INC)
+
+zvalueINC <- gwr.model2$SDF$INC/gwr.model2$SDF$INC_se
+columbus$zvalueINC <- zvalueINC 
+names(columbus)
+
+# Mapa de regiones con betas INC significativos y no significativos
+
+b3<-columbus$zvalueINC
+breaks3 <- c(min(b3), -1.96, max(b3))
+labels3 <- c("Regiones significativas INC", "Regiones no significativas INC")
+np3 <- findInterval(b3, breaks3)
+colors3 <- c("red", "blue")
+x11()
+plot(columbus, col = colors3[np3])
+legend("topleft", legend = labels3, fill = colors3, bty = "n")
+
+
+

@@ -1,0 +1,46 @@
+library(rgdal)
+library(sf)
+library(tidyverse)
+
+# Multiproposito
+multiproposito = "C:/Users/germa/Desktop/UNAL/Unal_cursos/trabajo_final_econometria_espacial/Bases_datos/Encuesta_multiproposito/Shape_file"
+setwd(multiproposito)
+
+multi_shp = st_read("EM2021_UPZ.shp") 
+
+multi_base = multi_shp %>% 
+  distinct(UPZEM)
+
+# Tasa laboral fuerte
+tasa_laboral_fuerte = "C:/Users/germa/Desktop/UNAL/Unal_cursos/trabajo_final_econometria_espacial/Bases_datos/Tasa_laboral_fuerte"
+setwd(tasa_laboral_fuerte)
+
+tasa_laboral_fuerte_shp = st_read("Tasa_Laboral_Fuerte_UPZ-polygon.shp")
+
+tasa_laboral_fuerte_base = as.data.frame(st_read("Tasa_Laboral_Fuerte_UPZ-polygon.shp"))
+
+# Movilidad
+movilidad = "C:/Users/germa/Desktop/UNAL/Unal_cursos/trabajo_final_econometria_espacial/Bases_datos/Encuesta_movilidad/Zonas"
+setwd(movilidad)
+
+movilidad_shp = st_read("UTAM.shp")
+
+movilidad_base = as.data.frame(movilidad_shp)
+
+movilidad_base = movilidad_base %>% 
+  filter(! grepl("^UPR", UTAM)) %>% 
+  mutate(COD = as.integer(sub("^UTAM", "", UTAM)))
+  
+
+# Join 
+
+join_bases = multi_base %>%  
+  inner_join(tasa_laboral_fuerte_base, by = c("UPZEM" = "UPZZONA")) 
+
+joined_data <- st_join(multi_shp, tasa_laboral_fuerte_shp, by = c("UPZEM" = "UPZZONA"))
+
+# Join 2
+join_bases2 = movilidad_base %>%  
+  inner_join(tasa_laboral_fuerte_base, by = c("COD" = "UPZZONA")) 
+
+    

@@ -1,0 +1,163 @@
+
+# Estimación de efectos totales, directos e indirectos
+
+## Coeficientes estimados##
+b <- c(0.135, 0.561)
+rho <- 0.642
+
+## Matrices W y X
+
+X <- cbind(c(10, 20, 30, 50, 30, 20, 10),
+           c(30, 20, 10, 0, 10, 20, 30))
+
+W <- cbind(c(0, 1, 0, 0, 0, 0, 0),
+           c(1, 0, 1, 0, 0, 0, 0),
+           c(0, 1, 0, 1, 0, 0, 0),
+           c(0, 0, 1, 0, 1, 0, 0),
+           c(0, 0, 0, 1, 0, 1, 0),
+           c(0, 0, 0, 0, 1, 0, 1),
+           c(0, 0, 0, 0, 0, 1, 0))
+
+# Estandarizar la matriz por filas
+
+Ws <- W / rowSums(W)
+
+# Predicción de valores antes del cambio (Tiempos de viaje estimados para cada unidad de análisis)
+
+yhat_1 <- solve(diag(nrow(X))- rho * Ws) %*% crossprod(t(X), b)
+
+# Predicción de valores con el cambio en la densidad en R2 (Tiempos de viaje estimados para cada unidad de análisis)
+
+X_d <- cbind(c(10, 40, 30, 50, 30, 20, 10),
+           c(30, 20, 10, 0, 10, 20, 30))
+
+yhat_2 <- solve(diag(nrow(X))- rho * Ws) %*% crossprod(t(X_d), b)
+
+# Análisis de los resultados
+
+results <- cbind(yhat_1, yhat_2, yhat_2 - yhat_1)
+colnames (results) <- c("y1", "y2", "y2 - y1")
+round (results, 2)
+
+# Al aumentar la denisidad (doble) en R2, por ejemplo, existe un efecto spillover pues aumenta en 2.56 minutos 
+# en los viajes de la región 1. Los vecinos directos de R2 son los que más se ven afectados por el aumento en la 
+# densidad de R2. De otra parte el efecto sobre R7, al ser la más alejada, existe pero es muy pequeño.
+
+sum (yhat_2 - yhat_1) # efecto total del aumento de la densidad en R2
+
+# ¿Qué pasaría si usamos OLS en lugar de SAR/SLM?
+
+# Calculamos el OLS para obtener los coeficientes
+# y <- c(42, 37, 30, 26, 30, 37, 42)
+# solve (t(X) %*% X) %*% t(X) %*% y
+# b_ols <- c(0.55, 1.25) # Coeficientes del modelo OLS
+
+b_ols <- c(0.135, 0.561) # Por comparabilidad, asumimos los mismos coeficientes del modelo SAR
+yhat_1_ols <- crossprod(t(X), b_ols)
+yhat_2_ols <- crossprod(t(X_d), b_ols)
+
+results_ols <- cbind(yhat_1_ols , yhat_2_ols , yhat_2_ols  - yhat_1_ols)
+colnames (results_ols) <- c("y1", "y2", "y2 - y1")
+round (results_ols, 2)
+
+# Mientras que en modelo SAR existe un efecto total de 8.8 minutos de aumento ante la variación de la densidad
+# en R2, en el modelo OLS solo es de 2.7 y se vincula únicamente al efecto sobre la misma unidad de análisis.
+
+# Efectos marginales - Uso de la matriz S
+
+S <- solve(diag(7) - rho * Ws) %*% diag (7) * 0.135
+
+# ¿Cuál es el efecto en todas las demás regiones cuando R2 aumenta su densidad en 1 unidad?
+
+S[,2] # Los efectos más altos son los de la región 1 y 2. 
+
+# ¿ En qué región se debería aumentar la densidad de tal forma que afecte lo menor posible los tiempos de todas
+# las demás?
+
+colSums (S) # Nos da el efecto total que tendría el aumento de la densidad en cada región sobre todos
+
+# Las regiones 1 y 7 tienen el menor efecto en tiempo ante aumentos de 1 unidad en densidad en ellas mismas.
+
+
+# Efecto total
+
+Total <- (crossprod(rep(1, 7), S) %*% rep (1, 7)) / nrow(X)
+
+# Efecto directo promedio (Average Impact of Density)
+
+ADI <- sum(diag(S)) / nrow (X) # Es el efecto sobre las propias regiones si cada una aumenta en 1 su densidad.
+
+# Efecto indirecto promedio (Average indirect impact of Density)
+
+AID <- Total - ADI
+
+# El efecto indirecto es mayor que el efecto directo. Esto quiere decir que el aumento de la densidad afecta de mayor
+# forma las regiones vecinas (indirecto - Spillover) que el efecto propio sobre sí mismas (directo).
+
+# Aplicación con dataset de columbus
+
+library(spdep)
+library(rgeos)
+library(rgdal)
+library(spatialreg)
+library(maptools)
+library(RColorBrewer)
+library(classInt)
+library(tmap)
+
+columbus <- readShapePoly(system.file("etc/shapes/columbus.shp",
+                                      package = "spdep")[1])
+
+list.queen<-poly2nb(columbus,queen=TRUE)
+W<-nb2listw(list.queen, style="W")
+
+fm <- CRIME ~ INC + HOVAL
+
+# Modelo SAR/SLM
+
+sar.columbus<-lagsarlm(fm,data=columbus@data, listw = W, method = "eigen")
+summary(sar.columbus)
+
+#Efectos marginales con ejemplo de columbus
+
+#Qué pasaría con el crimen en todas las regiones si el ingreso sube de
+#13.906 a 14.906 en la región número 30.
+
+rho <- sar.columbus$rho                                        #Rho estimado del modelo SAR-SLM
+beta_hat <- coef(sar.columbus)[-1]                             #Parámetros estimados
+A <- invIrW(W, rho = rho)                                      #(I - rho*W)^{-1}
+X <- cbind(1, columbus$INC, columbus$HOVAL)                    #Matriz de variables observables
+y_hat_pre <- A %*% crossprod(t(X), beta_hat)                   # y gorro (1)
+
+
+col_new <- columbus                                            #Copia del dataset
+col_new@data[col_new@data$POLYID == 30, "INC"] <- 14.906       #Cambio en el valor del ingreso 
+X_d <- cbind(1, col_new$INC, col_new$HOVAL)                    #Matriz de variables observables con cambio
+y_hat_post <- A %*% crossprod(t(X_d), beta_hat)                # y gorro (2)
+
+delta_y <- y_hat_post - y_hat_pre                              #Diferencia entre y gorro (1) y y gorro (2)
+col_new$delta_y <- delta_y                                     #Se agrega variable al dataset
+
+
+summary(delta_y)
+sum(delta_y)
+
+breaks <- c(min(col_new$delta_y), -0.05, max(col_new$delta_y))
+labels <- c("High-Impacted Regions", "Low-Impacted Regions")
+np <- findInterval(col_new$delta_y, breaks)
+colors <- c("red", "blue")
+
+
+plot(col_new, col = colors[np])
+legend("topleft", legend = labels, fill = colors, bty = "n")
+points(38.29, 30.35, pch = 19, col = "black", cex = 0.5)
+
+
+pal5 <- brewer.pal(6, "Spectral")
+cats5 <- classIntervals(col_new$delta_y, n = 5, style = "jenks")
+colors5 <- findColours(cats5, pal5)
+plot(col_new, col = colors5)
+legend("topleft", legend = round(cats5$brks, 2), fill = pal5, bty = "n")
+
+
+
